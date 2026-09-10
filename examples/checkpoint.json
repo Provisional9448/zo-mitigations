@@ -1,0 +1,8 @@
+{
+  "task_id": "example-job",
+  "attempt": 1,
+  "objective": "Validate a synthetic report",
+  "authority": "Local fixture inspection only; no external effects",
+  "next_step": "Verify the saved fixture result before continuing",
+  "artifacts": ["fixture-result.json"]
+}
