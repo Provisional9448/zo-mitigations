@@ -1,13 +1,9 @@
-# Privacy and sharing
+# Runtime data and privacy
 
-This distribution contains generic code, synthetic tests, instructions and example configuration. It deliberately excludes source workspace history, owner and client names, email addresses, phone numbers, private hostnames, credentials, actual conversation/task/service IDs, incident records, runtime logs and memory databases.
+The toolkit runs locally and has no built-in telemetry destination. Installation makes no network requests. Recovery events leave the host only when you configure a delivery adapter.
 
-Runtime state created after installation can contain sensitive task descriptions, paths, process identities and conversation references. Keep it outside the source repository, private to the receiving account, and out of future archives. Review even ignored files before sharing: `.gitignore` is not a security boundary.
+Checkpoints and incident records may contain task descriptions, file paths, process identifiers, resource measurements, and conversation references. Store runtime state in a private persistent directory outside the repository. Commands can also print this data, so review captured output before sharing it.
 
-Checkpoint, recovery, timer and one-shot monitor commands print state to standard output. Terminal transcripts and captured output can therefore contain the same private data and must also stay out of shared artifacts.
+Keep credentials in your secret store or environment, not in checkpoints or command arguments. For HTTP delivery, review the destination and the payload your adapter sends.
 
-The monitor collects local numeric observations and runtime identity. No telemetry destination is bundled. Optional delivery executes the receiving owner's configured adapter; inspect that adapter's destination and data policy. A caller-supplied task description is not additional authorization.
-
-Fresh release Git history uses a neutral author. The hosting account, repository URL, permissions, and provider access/audit metadata can still identify the publisher. Anonymized package contents do not make an Origin account anonymous. Use the content-only archive when recipients do not need repository access.
-
-Automated secret/identifier scans and human review reduce disclosure risk; neither proves that arbitrary future edits contain no private information. Recheck the exact outgoing files and every outgoing commit before each push. Do not paste source logs or credentials into bug reports.
+When reporting an issue, use a synthetic example or redact task details and credentials from logs. Ignore rules help keep generated state out of Git, but do not replace checking the files you share.

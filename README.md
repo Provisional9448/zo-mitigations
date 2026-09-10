@@ -1,62 +1,76 @@
-# Zo mitigation kit
+# Zo Mitigations
 
-A portable, anonymized install package for the layers around long-running Zo work. Python standard library only; no bundled credentials, live task records, account configuration, telemetry or source-workspace Git history.
+Keep long-running work recoverable when a Zo turn ends or the server restarts.
 
-This is a focused adaptation of an operating setup, not a copy of its entire agent platform. The installer lays down files safely. Activation and receiving-account integrations are explicit. It does not extend Zo's run limit or automatically resume every interrupted chat.
+This toolkit adds time budgeting, durable checkpoints, restart observation, and recovery handoffs to [Zo Computer](https://www.zo.computer). An optional Agent Client Protocol (ACP) adapter helps external model backends signal completion correctly. It uses Python's standard library and runs on your Zo.
 
-## What is included
+## The problem
 
-| Layer | Implementation | What it provides | Integration boundary |
-|---|---|---|---|
-| Shared instructions | `docs/OPERATING_GUIDANCE.md` | Time budgeting, scratch placement, checkpoint and reconciliation obligations | Recipient merges relevant guidance into their AGENTS.md; instructions are not enforcement |
-| Advisory run timer | `zo_mitigations/budget.py` | Monotonic timing, conservative startup allowance, checkpoint/return deadlines, restart-aware validity | CLI or optional ACP prompt injection; no automatic tool-boundary hook/MCP timer registration |
-| ACP completion guard | `zo_mitigations/acp.py` and `acp` command | Preserves native terminal/error events; synthesizes completion only for matching successful prompt responses | Opt-in JSONL stdio backend wrapper; not a replacement for a provider's full shim |
-| Scratch and checkpoints | Guidance plus `checkpoint` command | Private durable task/attempt records, process identity and optional return-conversation reference | Agent writes meaningful progress; no universal filesystem redirect |
-| Resource/reboot observation | `zo_mitigations/incidents.py`, `sampling.py`, `monitor` command | Boot/PID-1 changes, missing samples, sustained pressure, bounded durable outbox | Linux host metrics; not container-quota or memory-service-specific measurements |
-| Worker reconciliation | `zo_mitigations/recovery.py`, `recover` command | Observes registered processes and terminal evidence; queues stable-ID recovery notifications | One owning controller; no worker launch, automatic replay or arbitrary-chat discovery |
-| Delivery and continuation | `transport.py`, adapter examples, `docs/RECOVERY.md` | Explicit bounded subprocess delivery, retry identity, durable acceptance example | Real Zo wake-up and workflow continuation require the recipient's authenticated, deduplicating handoff service and coordinator |
+Long tasks need continuity beyond a single chat turn. This toolkit addresses these operating constraints:
 
-Reboot detection and checkpoint guidance work independently of the chat model. ACP wrapping only affects a model launched through that wrapper. Built-in Zo models do not acquire shim reminders just because the package is installed.
+| Limitation | What can happen | Our approach |
+|---|---|---|
+| A Zo run has a 60-minute limit | Work stops before validation or delivery finishes | Track a conservative deadline and save a checkpoint before the turn ends |
+| Write-heavy work can cause snapshot-related interruption | Builds or repeated intermediate writes interrupt the working session | Put disposable output in `/tmp`; retain source changes and compact checkpoints in the workspace |
+| A server restart can lose processes and temporary files | A worker disappears and its original chat cannot finish the handoff | Detect a changed runtime, preserve an incident, and ask an agent to reconcile saved work |
+| Completion signaling can be misleading on some ACP routes | A chat looks finished while tools are still running, or loses its final completion marker | Track prompt responses and preserve explicit success, failure, and cancellation signals |
+| A missed callback leaves the outcome uncertain | Work may be complete even though its result was never delivered | Use persistent task IDs, bounded retries, and a receiver that recognizes duplicate deliveries |
 
-## Install and verify
+These constraints reflect operating experience as of September 2026. Snapshot behavior and UI issues can vary by host and model route; verify your environment before relying on a workaround. The toolkit does not change Zo's run limit or prevent every restart.
 
-Read [the installation guide](docs/INSTALL_WITH_ZO.md), including a prompt you can give your own Zo agent. From the package directory:
+## How it works
+
+The approach is to preserve enough evidence for the next agent to continue responsibly. Small programs measure time, observe processes, and deliver records. The agent reads those records, checks what actually happened, and decides the next step.
+
+1. **Before work:** establish the deadline and save the task's objective, scope, and recovery location.
+2. **During work:** use temporary storage for disposable output and checkpoint meaningful progress in the workspace.
+3. **After interruption:** the monitor records restart evidence; a configured recovery controller checks registered tasks.
+4. **On continuation:** the receiving agent verifies existing effects and artifacts, then resumes unfinished work or delivers the completed result.
+
+Installation alone does not resume chats. Monitoring, agent wake-up, and workflow continuation are connected separately in the [installation guide](docs/INSTALL_WITH_ZO.md).
+
+## The layers
+
+| Layer | Where it lives | How it is enabled |
+|---|---|---|
+| Operating guidance | [Workspace guidance](docs/OPERATING_GUIDANCE.md), linked from your `AGENTS.md` | Your agent adopts the timing, scratch, and checkpoint workflow |
+| Turn budget | [budget.py](zo_mitigations/budget.py), `budget` command | Start/read/finish a timer; optionally inject it through the ACP adapter |
+| Durable task checkpoints | [recovery.py](zo_mitigations/recovery.py), `checkpoint` command | Register tasks explicitly and update their progress and terminal evidence |
+| Resource and restart monitor | [sampling.py](zo_mitigations/sampling.py), [incidents.py](zo_mitigations/incidents.py), `monitor` command | Run as a managed internal process service with persistent state |
+| Worker reconciliation | [recovery.py](zo_mitigations/recovery.py), `recover` command | Have one controller periodically inspect registered workers and queue findings |
+| Recovery delivery | [transport.py](zo_mitigations/transport.py) and [adapter examples](docs/RECOVERY.md) | Connect the outbox to an authenticated receiver and an agent coordinator |
+| ACP completion adapter | [acp.py](zo_mitigations/acp.py), `acp` command | Wrap a compatible JSONL ACP backend and validate its behavior |
+
+The monitor runs independently of the chat model. Guidance and checkpoint commands can be used with built-in Zo models or ACP models. The ACP adapter only affects backends launched through it.
+
+## Install with your agent
+
+Download or clone this repository onto your Zo, then give your agent this prompt:
+
+> Install this Zo Mitigations toolkit. Read README.md and docs/INSTALL_WITH_ZO.md, inspect the package, and run its offline tests. Install into a new workspace directory, integrate the relevant guidance, and configure local monitoring using my existing Zo service tools. Preserve existing settings and avoid duplicate monitors. Validate each enabled layer. Treat recovery delivery and ACP wrapping as optional integrations: inspect what is available, connect them within my existing authorization, and identify any missing prerequisite. Finish by reporting what is installed, what is active, and what still needs configuration.
+
+Your agent should follow the [step-by-step installation guide](docs/INSTALL_WITH_ZO.md). No third-party Python dependencies are required.
+
+To preview the base installation yourself, run from this repository:
 
 ```sh
 python3 -B -m unittest discover -s tests -v
 python3 -B install.py install --destination /home/workspace/zo-mitigations-v1
-python3 -B install.py install --destination /home/workspace/zo-mitigations-v1 --apply
 ```
 
-The installer previews by default and refuses existing destinations. It neither activates services nor overwrites root instructions. Run commands below from the installed directory; store state outside it in your own private persistent directory.
+Add `--apply` to the install command to copy the files. The installer uses a new directory and does not activate services or edit model settings.
 
-## Runtime commands
+## What to expect
 
-```sh
-python3 -B -m zo_mitigations --help
-python3 -B -m zo_mitigations budget start --state /tmp/turn-budget.json
-python3 -B -m zo_mitigations budget read --state /tmp/turn-budget.json
-python3 -B -m zo_mitigations monitor --state /home/workspace/.state/mitigations/incidents.json --once
-python3 -B -m zo_mitigations checkpoint --state /home/workspace/.state/mitigations/workers.json --input examples/checkpoint.json
-python3 -B -m zo_mitigations recover --state /home/workspace/.state/mitigations/workers.json
-```
+After guidance and monitoring are configured, agents have a checkpoint workflow and the service can record restart/resource incidents locally. Automatic wake-up additionally requires a durable handoff receiver. Continuing work requires a coordinator that knows the task and its permitted scope.
 
-The checkpoint file is synthetic; replace its contents with the authorized task. For a real worker, `checkpoint --pid PID` records its current process identity. A missing PID is evidence to reconcile, not success or permission to restart it. Only one controller may update each state file. Do not run an independent checkpoint writer concurrently with a long-lived registry object; route writes through the owning controller or serialize short CLI operations.
+There is no universal discovery or restart of all open chats. A task ID identifies recorded work; a Zo conversation ID optionally tells the receiver which chat to continue. A receipt proves delivery acceptance, not task completion.
 
-To observe continuously, omit `--once` and run the command through Zo's managed internal process service. No public web endpoint is needed. To deliver notifications, explicitly set `--delivery-argv` to a JSON array such as `["python3","/absolute/path/to/adapter.py"]`. The adapter receives one JSON payload on stdin, has a 20-second execution bound, and must exit zero only after durable deduplicated acceptance. See [recovery integration](docs/RECOVERY.md). Without the adapter the outbox stays local.
+## Documentation
 
-Optional ACP adapter, after testing the receiving backend:
+- [Installation, validation, upgrades, and removal](docs/INSTALL_WITH_ZO.md)
+- [Timing, scratch storage, and checkpoint guidance](docs/OPERATING_GUIDANCE.md)
+- [Recovery integration and delivery contract](docs/RECOVERY.md)
+- [Runtime data and privacy](PRIVACY.md)
 
-```sh
-python3 -B -m zo_mitigations acp --budget-dir /tmp/mitigation-acp-budget -- /absolute/path/to/acp-backend
-```
-
-This forwards JSONL between the host and the specified backend and can append timing context to session prompts. Configure it through the recipient's existing provider settings only after capturing the old command. Test two turns, commentary followed by tools, steering, errors, cancellation and disconnect. The included synthetic protocol tests establish wrapper behavior, not acceptance on every Zo UI/backend. The wrapper does not install provider binaries or change their model selection.
-
-## Limits and privacy
-
-No deliberate reboot or resource exhaustion is needed to test this kit. A runtime epoch change cannot identify its cause. A delivery receipt does not prove completion of the underlying work. The kit does not include a public server-usage dashboard, memory integration, provider-authentication wrappers, the original full CLI delegation framework, or a universal ordinary-chat recovery system.
-
-Read [PRIVACY.md](PRIVACY.md) before sharing. Post-install state and command output can contain private information. The release archive contains content only; repository ownership can still identify its publisher.
-
-Provider reference: [Zo API guide](https://www.zo.computer/guide/api). Verify current service and API behavior on the receiving account before activation.
+This is a community toolkit, not an official Zo platform component.
